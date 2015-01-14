@@ -1,0 +1,88 @@
+DerivIT
+
+vectors - performance
+hashtable and hashmap - performance
+set
+
+spring - aop - advice and pointcut
+around aop - can the transaction be accesible 
+
+hibernate - one to one mapping
+mapped by
+use count(*) in jpql
+y use jpa with hibernate and y not hibernate alone
+how to call stored proc fomr hibernate
+
+struts - diff between interceptor and filter
+
+plsql - query for selecting * where firstname+lastname is more than 1 time
+
+jms - can we specify transaction in jms
+durable subscription
+mq - poison message
+dead letter queue, when a message comes to DLQ
+
+
+=========================Dell R&D========================
+classloaders
+comm between apps
+ajax security
+jdbc drivers
+singleton classes in two wars
+Isolation Levels
+
+=================Dell R&D==================
+AOP
+Mockobjects
+DI
+SessionFixation Filter
+Implement Jaxb
+SAX and DOM Parser
+
+================Happiest Minds=================
+Reverse a string based on words
+Numa architecture
+Tree,LinkedList
+
+=============CTS============
+-Define REST
+-hashset uniqueness
+-How to achive ordering in set and Map
+-Struts2 architectur
+-Struts2 interceptors
+-Thread,callable,Threadexecuter
+-Comparator and Comparable,Comparator Chaining
+-define Generics?why to use it?
+-Sticky Sessions
+-----------------Merit Track---------------
+-Loading a huge list of objects to memory(LinkedList)
+-A generic sorting implemetation and design pattern can be used(Strategic)
+-A collection class which gives an average access performance(LinkedList)
+-How to deal with concurrent modifications of an object in JPA and same in jdbc
+-Dis advantages of using ORM
+	-Loading entire object state to perform an update.
+-Disadvantages of using @Version as a timestamp
+========================ORCC=================
+-Weak references and its use cases
+-How to prevent the multiple submissions of form in a web application.
+-How to detect a page refresh...
+-Composition and aggregation
+-Difference between REST and SOAP
+-Find out a pair acted together in a moview database(Movie,hero,heroine,date...)
+-final key word and immutability
+-Design patterns
+===================CISCO=================
+-drivers
+-Statements(noramal,prepared,callable)
+-collection and oops
+=========================Tata Elxsi==============
+-Object methods
+-Polymorphism
+-Why wait and notify are in object
+-Spring AOP
+-REST configuration with cxf
+-ArrayList and LinkedList
+-Collection framework
+-hashcode() and equals().
+==========================Deloite==========================
+-Sql(find employee with second heighest salary)
