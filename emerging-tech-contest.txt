@@ -1,0 +1,52 @@
+POC Candidate - Background
+--------------------------
+->What is it about?
+	->CLIPS Subscription Search Feature
+->Why this candidate / what makes it ideal?
+	->CLIPS is built around the subscription model
+	->Entry point of CLIPS
+	
+Objectives/Expected outcomes
+----------------------------
+	->Better UI experience
+	->Scalable architecture
+	->Better performance
+	->Fuctional test automation
+	
+How? : Technology/Practices
+---------------------------
+	->Technology stack
+		-Ezweb and AngularJs
+		-RESTful webservices using spring mvc
+		-SARIMA for user role management
+		-Spring security to enforce role based security on objects and features
+		-Token based authentication
+		-H2DB for unit testing
+		-Cucumber for BDD
+		-Jenkins for CI
+		-XLDeploy/DeployIT
+		-Cloud platform(SgCloud) 
+		-ELK(ElasticSearch+Logstash+Kibana) for log monitoring and analysis
+	->Software Craftsmanship
+		-TDD
+		-BDD
+		-CD
+		
+POC Demo
+--------
+	link image
+What else? : Extras that were done w.r.t CD and monitoring
+----------------------------------------------------------
+		-A commit triggers Build->Deploy->Feature/Functional Testing
+			link and image pipeline
+		-Auto deployment using DeployIT triggerd by a jenkins job
+			link image
+		-Post deployment funational tests using cucumber
+			link image
+		-Log monitoring using ELK
+			link image
+Future :
+-------
+	->Distributed Grid(Hazelcast/Terracotta) for near real time reports
+	->Microservices
+	
