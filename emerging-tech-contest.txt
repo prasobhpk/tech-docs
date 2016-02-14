@@ -1,52 +1,212 @@
-POC Candidate - Background
---------------------------
-->What is it about?
-	->CLIPS Subscription Search Feature
-->Why this candidate / what makes it ideal?
-	->CLIPS is built around the subscription model
-	->Entry point of CLIPS
-	
-Objectives/Expected outcomes
-----------------------------
-	->Better UI experience
-	->Scalable architecture
-	->Better performance
-	->Fuctional test automation
-	
-How? : Technology/Practices
----------------------------
-	->Technology stack
-		-Ezweb and AngularJs
-		-RESTful webservices using spring mvc
-		-SARIMA for user role management
-		-Spring security to enforce role based security on objects and features
-		-Token based authentication
-		-H2DB for unit testing
-		-Cucumber for BDD
-		-Jenkins for CI
-		-XLDeploy/DeployIT
-		-Cloud platform(SgCloud) 
-		-ELK(ElasticSearch+Logstash+Kibana) for log monitoring and analysis
-	->Software Craftsmanship
-		-TDD
-		-BDD
-		-CD
-		
-POC Demo
---------
-	link image
-What else? : Extras that were done w.r.t CD and monitoring
-----------------------------------------------------------
-		-A commit triggers Build->Deploy->Feature/Functional Testing
-			link and image pipeline
-		-Auto deployment using DeployIT triggerd by a jenkins job
-			link image
-		-Post deployment funational tests using cucumber
-			link image
-		-Log monitoring using ELK
-			link image
-Future :
--------
-	->Distributed Grid(Hazelcast/Terracotta) for near real time reports
-	->Microservices
-	
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Properties;
+
+import static java.lang.Boolean.parseBoolean;
+
+public class PropertiesEx {
+
+    private final Properties properties;
+
+    public PropertiesEx(Properties properties) {
+        this.properties = properties;
+    }
+
+    public PropertiesEx(String... propertiesFileNames) throws IOException {
+        this(loadProperties(propertiesFileNames));
+    }
+
+    public static Properties loadProperties(String... propertiesFileNames)
+            throws IOException {
+        Properties properties = new Properties();
+        for (String propertiesFileName : propertiesFileNames) {
+            InputStream is;
+            if (propertiesFileName.startsWith("file://")) {
+                is = new FileInputStream(propertiesFileName.replace("file://", ""));
+            } else {
+                is = PropertiesEx.class.getClassLoader().getResourceAsStream(propertiesFileName);
+                if (is == null) {
+                    throw new IOException(propertiesFileName + " not found in classpath");
+                }
+            }
+            try {
+                properties.load(is);
+            } finally {
+                is.close();
+            }
+        }
+        return properties;
+    }
+
+    public boolean getBoolean(String key) {
+        return parseBoolean(properties.getProperty(key));
+    }
+
+    public boolean getBoolean(String key, boolean defaultValue) {
+        String property = properties.getProperty(key);
+        if (StringUtils.isBlank(property)) {
+            return defaultValue;
+        } else {
+            return parseBoolean(property);
+        }
+    }
+
+    public String get(String key) {
+        return properties.getProperty(key);
+    }
+
+    public List<String> getList(String key) {
+        String rawValues = properties.getProperty(key);
+        String[] rawUrlInfos = rawValues.split("[;,]");
+        return Arrays.asList(rawUrlInfos);
+    }
+
+    public <E extends Enum<E>> E getEnum(String key, Class<E> clazz) {
+        return Enum.valueOf(clazz, get(key));
+    }
+
+    public int getInt(String key) {
+        String value = get(key);
+        return parseIntegerProperty(value);
+    }
+
+    public int getInt(String key, int defaultValue) {
+        String value = get(key);
+        return StringUtils.isBlank(value) ? defaultValue : parseIntegerProperty(value);
+    }
+
+    public long getLong(String key, long defaultValue) {
+        String value = get(key);
+        return StringUtils.isBlank(value) ? defaultValue : parseLongProperty(value);
+    }
+
+    public String getString(String key, String defaultValue) {
+        String value = get(key);
+        return StringUtils.isBlank(value) ? defaultValue : value;
+    }
+
+    public void set(String key, String value) {
+        properties.setProperty(key, value);
+    }
+
+    private static int parseIntegerProperty(String value) {
+        if ("MAX_VALUE".equals(value)) {
+            return Integer.MAX_VALUE;
+        }
+        return Integer.parseInt(value);
+    }
+
+    private static long parseLongProperty(String value) {
+        if ("MAX_VALUE".equals(value)) {
+            return Long.MAX_VALUE;
+        }
+        return Long.parseLong(value);
+    }
+
+}
+
+
+
+
+===================
+import javax.annotation.Nonnull;
+import java.nio.charset.Charset;
+import java.util.Random;
+
+public final class StringUtils {
+    public static final Charset UTF8 = Charset.forName("UTF-8");
+    public static final Charset ASCII = Charset.forName("US-ASCII");
+
+    private StringUtils() {
+    }
+
+    public static String makeFirstCharUpperCase(String attributeName) {
+        if (attributeName == null) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(attributeName);
+        sb.setCharAt(0, Character.toUpperCase(attributeName.charAt(0)));
+        return sb.toString();
+    }
+
+    public static String arrayToString(String[] a, String separator) {
+        if (a == null || separator == null) {
+            return null;
+        }
+        StringBuilder result = new StringBuilder();
+        if (a.length > 0) {
+            result.append(a[0]);
+            for (int i = 1; i < a.length; i++) {
+                result.append(separator);
+                result.append(a[i]);
+            }
+        }
+        return result.toString();
+    }
+
+    public static String removeBlanks(String string) {
+        return string.replaceAll("\\s", "");
+    }
+
+    public static boolean isBlank(String str) {
+        return str == null || str.trim().length() == 0;
+    }
+
+    public static boolean isEmpty(String str) {
+        return str == null || str.length() == 0;
+    }
+
+    public static boolean equals(String str1, String str2) {
+        if (str1 == null) {
+            return str2 == null;
+        }
+        return str2 != null && str1.equals(str2);
+    }
+
+    public static String randomString(int length) {
+        return new RandomString(length).nextString();
+    }
+
+    public static class RandomString {
+        private static final char[] symbols = new char[26];
+
+        static {
+            for (int idx = 0; idx < 26; ++idx) {
+                symbols[idx] = (char) ('a' + idx);
+            }
+        }
+
+        private final Random random = new Random();
+
+        private final char[] buf;
+
+        public RandomString(int length) {
+            if (length < 1) {
+                throw new IllegalArgumentException("length < 1: " + length);
+            }
+            buf = new char[length];
+        }
+
+        public String nextString() {
+            for (int idx = 0; idx < buf.length; ++idx) {
+                buf[idx] = symbols[random.nextInt(symbols.length)];
+            }
+            return new String(buf);
+        }
+
+    }
+
+    public static String trim(String string) {
+        return string == null ? null : string.trim();
+    }
+
+    public static char[] copy(@Nonnull char[] original) {
+        char[] copy = new char[original.length];
+        System.arraycopy(original, 0, copy, 0, original.length);
+        return copy;
+    }
+
+}
