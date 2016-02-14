@@ -1,212 +1,225 @@
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Properties;
+import com.google.common.base.Joiner;
+import com.hazelcast.config.Config;
+import com.hazelcast.config.GroupConfig;
+import com.hazelcast.config.MemberGroupConfig;
+import com.hazelcast.config.NetworkConfig;
+import com.hazelcast.config.PartitionGroupConfig;
+import com.hazelcast.config.PartitionGroupConfig.MemberGroupType;
+import com.hazelcast.config.SerializerConfig;
+import com.hazelcast.nio.serialization.StreamSerializer;
+import sgcib.ged.bcs.core.business.ProductMultipartDataSerializer;
+import sgcib.ged.bcs.core.business.TradeMultipartDataSerializer;
+import sgcib.ged.bcs.distributedcache.model.ProductMultipartData;
+import sgcib.ged.bcs.distributedcache.model.TradeMultipartData;
+import sgcib.ged.bcs.log.Logger;
+import sgcib.ged.bcs.log.LoggerFactory;
+import sgcib.ged.bcs.misc.PropertiesEx;
+import sgcib.ged.bcs.string.StringUtils;
 
-import static java.lang.Boolean.parseBoolean;
+import javax.annotation.Nonnull;
+import java.util.Collection;
+import java.util.Set;
 
-public class PropertiesEx {
+import static sgcib.ged.bcs.hazelcast.node.configuration.ClusterTopologyProperties.HAZELCAST_GROUP_NAME;
+import static sgcib.ged.bcs.hazelcast.node.configuration.ClusterTopologyProperties.HAZELCAST_GROUP_PASSWORD;
+import static sgcib.ged.bcs.hazelcast.node.configuration.ClusterTopologyProperties.HAZELCAST_JMX;
+import static sgcib.ged.bcs.hazelcast.node.configuration.ClusterTopologyProperties.HAZELCAST_JMX_DETAILED;
+import static sgcib.ged.bcs.hazelcast.node.configuration.ClusterTopologyProperties.HAZELCAST_LOGGING_TYPE;
+import static sgcib.ged.bcs.hazelcast.node.configuration.ClusterTopologyProperties.HAZELCAST_MEMCACHE_ENABLED;
+import static sgcib.ged.bcs.hazelcast.node.configuration.ClusterTopologyProperties
+        .HAZELCAST_NODE_CONNECTION_TIMEOUT_SECONDS;
+import static sgcib.ged.bcs.hazelcast.node.configuration.ClusterTopologyProperties.HAZELCAST_NODE_MEMBERS;
+import static sgcib.ged.bcs.hazelcast.node.configuration.ClusterTopologyProperties.HAZELCAST_NODE_NAME;
+import static sgcib.ged.bcs.hazelcast.node.configuration.ClusterTopologyProperties.HAZELCAST_NODE_PORT;
+import static sgcib.ged.bcs.hazelcast.node.configuration.ClusterTopologyProperties.HAZELCAST_NODE_PORT_AUTO_INCREMENT;
 
-    private final Properties properties;
+public class ClusterTopologyImpl implements ClusterTopology {
 
-    public PropertiesEx(Properties properties) {
-        this.properties = properties;
+    private static final Logger logger = LoggerFactory.getLogger(ClusterTopologyImpl.class);
+
+    private final PropertiesEx prop;
+
+    private final String version;
+
+    public ClusterTopologyImpl(@Nonnull PropertiesEx properties, @Nonnull String version) {
+        this.prop = properties;
+        this.version = version;
     }
 
-    public PropertiesEx(String... propertiesFileNames) throws IOException {
-        this(loadProperties(propertiesFileNames));
+    private static <T> SerializerConfig create(StreamSerializer<T> serializer, Class<T> clazz) {
+        return new SerializerConfig().setImplementation(serializer).setTypeClass(clazz);
     }
 
-    public static Properties loadProperties(String... propertiesFileNames)
-            throws IOException {
-        Properties properties = new Properties();
-        for (String propertiesFileName : propertiesFileNames) {
-            InputStream is;
-            if (propertiesFileName.startsWith("file://")) {
-                is = new FileInputStream(propertiesFileName.replace("file://", ""));
-            } else {
-                is = PropertiesEx.class.getClassLoader().getResourceAsStream(propertiesFileName);
-                if (is == null) {
-                    throw new IOException(propertiesFileName + " not found in classpath");
-                }
-            }
-            try {
-                properties.load(is);
-            } finally {
-                is.close();
-            }
-        }
-        return properties;
+    @Override
+    public CacheNode createCacheNode() {
+        return new CacheNodeImpl(createMemberConfig(), prop, version);
     }
 
-    public boolean getBoolean(String key) {
-        return parseBoolean(properties.getProperty(key));
-    }
+    private Config createMemberConfig() {
 
-    public boolean getBoolean(String key, boolean defaultValue) {
-        String property = properties.getProperty(key);
-        if (StringUtils.isBlank(property)) {
-            return defaultValue;
+        String hzNodeName = prop.get(HAZELCAST_NODE_NAME);
+        String hzName = StringUtils.isBlank(hzNodeName) ? prop.get("hazelcast.group.name") : hzNodeName;
+        String name = String.format("bcs-%s", hzName);
+
+        Config cfg = new Config();
+        cfg.setInstanceName(name);
+
+        //----------------------
+        //-- Network config
+        //----------------------
+        NetworkConfig networkConfig = cfg.getNetworkConfig();
+        // ports
+        networkConfig.setPort(Integer.parseInt(prop.get(HAZELCAST_NODE_PORT)));
+        // don't choose a different port if the specified one is taken
+        networkConfig.setPortAutoIncrement(prop.getBoolean(HAZELCAST_NODE_PORT_AUTO_INCREMENT));
+        networkConfig.setReuseAddress(true);
+        // disable auto-detect nodes on same sub-network
+        networkConfig.getJoin().getMulticastConfig().setEnabled(false);
+        // explicitly specify cluster members
+        networkConfig.getJoin().getTcpIpConfig().setEnabled(true);
+        networkConfig.getJoin().getTcpIpConfig().setMembers(prop.getList(HAZELCAST_NODE_MEMBERS));
+        // timeout for connecting to all cluster members
+        networkConfig.getJoin().getTcpIpConfig()
+                .setConnectionTimeoutSeconds(prop.getInt(HAZELCAST_NODE_CONNECTION_TIMEOUT_SECONDS));
+
+        //----------------------
+        //-- Partition Groups
+        //----------------------
+        // Partition groups ensure that backup copies are not stored on the same machine
+        // and in same data center than primary copies.
+
+        Collection<Set<String>> groups = CacheNodeConfigUtil.getPartitionGroups(prop);
+        if (groups.size() == 1) {
+            logger.warn("Ignoring partition groups, because only one group is configured.");
+            PartitionGroupConfig partitionGroupConfig = cfg.getPartitionGroupConfig();
+            partitionGroupConfig.setEnabled(false);
         } else {
-            return parseBoolean(property);
+            logger.info("Initializing partition groups...");
+            PartitionGroupConfig partitionGroupConfig = cfg.getPartitionGroupConfig();
+            partitionGroupConfig.setEnabled(true);
+            partitionGroupConfig.setGroupType(MemberGroupType.CUSTOM);
+
+            int partitionGroupId = 1;
+            for (Set<String> groupMembers : groups) {
+                logger.info("Partition group %d: %s",
+                        partitionGroupId++, Joiner.on(",").join(groupMembers));
+
+                MemberGroupConfig groupConfig = new MemberGroupConfig();
+                groupConfig.setInterfaces(groupMembers);
+                partitionGroupConfig.addMemberGroupConfig(groupConfig);
+            }
+        }
+
+        //----------------------
+        //-- Group config
+        //----------------------
+        cfg.setGroupConfig(
+                new GroupConfig(prop.get(HAZELCAST_GROUP_NAME), prop.get(HAZELCAST_GROUP_PASSWORD)));
+
+        //----------------------
+        //-- Serialization config
+        //----------------------
+        //!\\ Must be configured on both server and client sides
+        cfg.getSerializationConfig()
+                .addSerializerConfig(create(new ProductMultipartDataSerializer(), ProductMultipartData.class))
+                .addSerializerConfig(create(new TradeMultipartDataSerializer(), TradeMultipartData.class));
+
+        //----------------------
+        //-- Advanced config
+        //----------------------
+        // logging framework
+        cfg.setProperty("hazelcast.logging.type", prop.get(HAZELCAST_LOGGING_TYPE));
+        cfg.setProperty("hazelcast.memcache.enabled", prop.get(HAZELCAST_MEMCACHE_ENABLED));
+
+        // jmx
+        cfg.setProperty("hazelcast.jmx", prop.get(HAZELCAST_JMX));
+        cfg.setProperty("hazelcast.jmx.detailed", prop.get(HAZELCAST_JMX_DETAILED));
+
+        return cfg;
+    }
+}
+=============
+
+public class HazelcastNode {
+
+    private static final Logger logger = LoggerFactory.getLogger(HazelcastNode.class);
+
+    public static void main(String[] args) {
+        try {
+            String configFile;
+            if (args != null && args.length > 0) {
+                configFile = args[0];
+            } else {
+                configFile = "hazelcast-node.properties";
+            }
+            String version = VersionGetter.getProjectVersionNumber("bcs-hazelcast-node");
+            logger.info("===== Launching Hazelcast cache node =====");
+            logger.info("Version : " + version);
+            logger.info("Config file : " + configFile);
+            PropertiesEx prop = new PropertiesEx(configFile);
+            ClusterTopology cluster = new ClusterTopologyImpl(prop, version);
+            cluster.createCacheNode();
+            logger.info("hazelcast-node is UP and RUNNING");
+            scheduleHourlyStatusLogger();
+        } catch (Exception e) {
+            logger.error("Cannot start Hazelcast cache node ", e);
         }
     }
 
-    public String get(String key) {
-        return properties.getProperty(key);
+    /**
+     * We log the status of the server every hour to support Shell scripts that scan <b>today's</b> log files
+     * to determine if a process is up and running. The most reliable way to determine if a process is up and running
+     * is to use its services, but for simple Shell scripts, such complexity is undesired.
+     */
+    private static void scheduleHourlyStatusLogger() {
+        SchedulerUtils.scheduleAtBeginningOfEveryHour(new Runnable() {
+            @Override
+            public void run() {
+                logger.info("hazelcast-node is UP and RUNNING");
+            }
+        });
     }
-
-    public List<String> getList(String key) {
-        String rawValues = properties.getProperty(key);
-        String[] rawUrlInfos = rawValues.split("[;,]");
-        return Arrays.asList(rawUrlInfos);
-    }
-
-    public <E extends Enum<E>> E getEnum(String key, Class<E> clazz) {
-        return Enum.valueOf(clazz, get(key));
-    }
-
-    public int getInt(String key) {
-        String value = get(key);
-        return parseIntegerProperty(value);
-    }
-
-    public int getInt(String key, int defaultValue) {
-        String value = get(key);
-        return StringUtils.isBlank(value) ? defaultValue : parseIntegerProperty(value);
-    }
-
-    public long getLong(String key, long defaultValue) {
-        String value = get(key);
-        return StringUtils.isBlank(value) ? defaultValue : parseLongProperty(value);
-    }
-
-    public String getString(String key, String defaultValue) {
-        String value = get(key);
-        return StringUtils.isBlank(value) ? defaultValue : value;
-    }
-
-    public void set(String key, String value) {
-        properties.setProperty(key, value);
-    }
-
-    private static int parseIntegerProperty(String value) {
-        if ("MAX_VALUE".equals(value)) {
-            return Integer.MAX_VALUE;
-        }
-        return Integer.parseInt(value);
-    }
-
-    private static long parseLongProperty(String value) {
-        if ("MAX_VALUE".equals(value)) {
-            return Long.MAX_VALUE;
-        }
-        return Long.parseLong(value);
-    }
-
 }
 
+============
+import java.util.Calendar;
+import java.util.Date;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
+public class SchedulerUtils {
 
+    /**
+     * Schedule a task every hour.
+     *
+     * <p>With Spring 4, this utility method could be replaced with @Scheduled.
+     *
+     * @param runnable task
+     * @return next execution of the task
+     */
+    public static Date scheduleAtBeginningOfEveryHour(Runnable runnable) {
+        final int oneHourInMS = 60 * 60 * 1000;
 
-===================
-import javax.annotation.Nonnull;
-import java.nio.charset.Charset;
-import java.util.Random;
+        final Date now = new Date();
+        final Date nextHour = nextHour();
+        final long initialDelayInMS = Math.max(nextHour.getTime() - now.getTime(), 0);
 
-public final class StringUtils {
-    public static final Charset UTF8 = Charset.forName("UTF-8");
-    public static final Charset ASCII = Charset.forName("US-ASCII");
-
-    private StringUtils() {
+        ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+        scheduler.scheduleAtFixedRate(runnable, initialDelayInMS, oneHourInMS, TimeUnit.MILLISECONDS);
+        return nextHour;
     }
 
-    public static String makeFirstCharUpperCase(String attributeName) {
-        if (attributeName == null) {
-            return "";
-        }
-        StringBuilder sb = new StringBuilder(attributeName);
-        sb.setCharAt(0, Character.toUpperCase(attributeName.charAt(0)));
-        return sb.toString();
-    }
-
-    public static String arrayToString(String[] a, String separator) {
-        if (a == null || separator == null) {
-            return null;
-        }
-        StringBuilder result = new StringBuilder();
-        if (a.length > 0) {
-            result.append(a[0]);
-            for (int i = 1; i < a.length; i++) {
-                result.append(separator);
-                result.append(a[i]);
-            }
-        }
-        return result.toString();
-    }
-
-    public static String removeBlanks(String string) {
-        return string.replaceAll("\\s", "");
-    }
-
-    public static boolean isBlank(String str) {
-        return str == null || str.trim().length() == 0;
-    }
-
-    public static boolean isEmpty(String str) {
-        return str == null || str.length() == 0;
-    }
-
-    public static boolean equals(String str1, String str2) {
-        if (str1 == null) {
-            return str2 == null;
-        }
-        return str2 != null && str1.equals(str2);
-    }
-
-    public static String randomString(int length) {
-        return new RandomString(length).nextString();
-    }
-
-    public static class RandomString {
-        private static final char[] symbols = new char[26];
-
-        static {
-            for (int idx = 0; idx < 26; ++idx) {
-                symbols[idx] = (char) ('a' + idx);
-            }
-        }
-
-        private final Random random = new Random();
-
-        private final char[] buf;
-
-        public RandomString(int length) {
-            if (length < 1) {
-                throw new IllegalArgumentException("length < 1: " + length);
-            }
-            buf = new char[length];
-        }
-
-        public String nextString() {
-            for (int idx = 0; idx < buf.length; ++idx) {
-                buf[idx] = symbols[random.nextInt(symbols.length)];
-            }
-            return new String(buf);
-        }
-
-    }
-
-    public static String trim(String string) {
-        return string == null ? null : string.trim();
-    }
-
-    public static char[] copy(@Nonnull char[] original) {
-        char[] copy = new char[original.length];
-        System.arraycopy(original, 0, copy, 0, original.length);
-        return copy;
+    /**
+     * @return a date corresponding to the next hour at XX:00:00.000
+     */
+    private static Date nextHour() {
+        Calendar calendar = Calendar.getInstance();
+        calendar.clear(Calendar.MINUTE);
+        calendar.clear(Calendar.SECOND);
+        calendar.clear(Calendar.MILLISECOND);
+        calendar.add(Calendar.HOUR_OF_DAY, 1);
+        return calendar.getTime();
     }
 
 }
